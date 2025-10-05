@@ -415,44 +415,59 @@ def get_stock_data(ticker):
         return None
 
 def apply_filters(df, filters):
-    """Apply filtering criteria"""
+    """Apply filtering criteria - now more flexible with missing data"""
     filtered_df = df.copy()
     
+    # Add a score column to rank stocks
+    filtered_df['Filter_Score'] = 0
+    
     if filters['roce']:
-        filtered_df = filtered_df[
-            (filtered_df['ROCE (%)'].notna()) & 
-            (filtered_df['ROCE (%)'] >= filters['roce_min'])
-        ]
+        # Give points instead of eliminating
+        roce_mask = (filtered_df['ROCE (%)'].notna()) & (filtered_df['ROCE (%)'] >= filters['roce_min'])
+        filtered_df.loc[roce_mask, 'Filter_Score'] += 2
+        if filters.get('strict_mode', False):
+            filtered_df = filtered_df[roce_mask]
     
     if filters['fcf']:
-        filtered_df = filtered_df[filtered_df['Positive FCF (3/4Q)'] == True]
+        # FCF check - give points if available and positive
+        fcf_mask = filtered_df['Positive FCF (3/4Q)'] == True
+        filtered_df.loc[fcf_mask, 'Filter_Score'] += 2
+        if filters.get('strict_mode', False):
+            filtered_df = filtered_df[fcf_mask]
     
     if filters['pe']:
-        filtered_df = filtered_df[
-            (filtered_df['P/E Ratio'].notna()) & 
-            (filtered_df['P/E Ratio'] < filters['pe_max'])
-        ]
+        pe_mask = (filtered_df['P/E Ratio'].notna()) & (filtered_df['P/E Ratio'] < filters['pe_max']) & (filtered_df['P/E Ratio'] > 0)
+        filtered_df.loc[pe_mask, 'Filter_Score'] += 1
+        if filters.get('strict_mode', False):
+            filtered_df = filtered_df[pe_mask]
     
     if filters['profit_growth']:
-        filtered_df = filtered_df[
-            (filtered_df['3Y Profit Growth (%)'].notna()) & 
-            (filtered_df['3Y Profit Growth (%)'] >= filters['profit_growth_min'])
-        ]
+        pg_mask = (filtered_df['3Y Profit Growth (%)'].notna()) & (filtered_df['3Y Profit Growth (%)'] >= filters['profit_growth_min'])
+        filtered_df.loc[pg_mask, 'Filter_Score'] += 2
+        if filters.get('strict_mode', False):
+            filtered_df = filtered_df[pg_mask]
     
     if filters['debt_equity']:
-        filtered_df = filtered_df[
-            (filtered_df['Debt to Equity'].notna()) & 
-            (filtered_df['Debt to Equity'] < filters['debt_equity_max'])
-        ]
+        de_mask = (filtered_df['Debt to Equity'].notna()) & (filtered_df['Debt to Equity'] < filters['debt_equity_max'])
+        filtered_df.loc[de_mask, 'Filter_Score'] += 1
+        if filters.get('strict_mode', False):
+            filtered_df = filtered_df[de_mask]
     
     if filters['dividend']:
-        filtered_df = filtered_df[filtered_df['Dividend Yield (%)'] > 0]
+        div_mask = filtered_df['Dividend Yield (%)'] > 0
+        filtered_df.loc[div_mask, 'Filter_Score'] += 0.5
     
     if filters['roe']:
-        filtered_df = filtered_df[
-            (filtered_df['ROE (%)'].notna()) & 
-            (filtered_df['ROE (%)'] >= filters['roe_min'])
-        ]
+        roe_mask = (filtered_df['ROE (%)'].notna()) & (filtered_df['ROE (%)'] >= filters['roe_min'])
+        filtered_df.loc[roe_mask, 'Filter_Score'] += 1
+    
+    # In flexible mode, keep stocks with at least minimum score
+    if not filters.get('strict_mode', False):
+        min_score = filters.get('min_score', 3)  # At least 3 out of 8.5 possible points
+        filtered_df = filtered_df[filtered_df['Filter_Score'] >= min_score]
+    
+    # Sort by score
+    filtered_df = filtered_df.sort_values('Filter_Score', ascending=False)
     
     return filtered_df
 
