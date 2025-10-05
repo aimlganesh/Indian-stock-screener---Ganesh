@@ -472,6 +472,14 @@ def apply_filters(df, filters):
     return filtered_df
 
 def main():
+    # Initialize session state
+    if 'screening_complete' not in st.session_state:
+        st.session_state.screening_complete = False
+    if 'all_data' not in st.session_state:
+        st.session_state.all_data = None
+    if 'filtered_data' not in st.session_state:
+        st.session_state.filtered_data = None
+    
     st.markdown('<h1 class="main-header">📈 Indian Stock Screener with Technical Analysis</h1>', unsafe_allow_html=True)
     st.markdown("Filter Indian stocks (NIFTY 50 + Large Cap + Mid Cap) with fundamental & technical analysis")
     
@@ -500,6 +508,22 @@ def main():
     filters['dividend'] = st.sidebar.checkbox("Dividend Payer", value=False)
     filters['roe'] = st.sidebar.checkbox("ROE Filter", value=False)
     filters['roe_min'] = st.sidebar.slider("Minimum ROE (%)", 10, 30, 15, 1) if filters['roe'] else 15
+    
+    st.sidebar.subheader("⚙️ Filter Mode")
+    filter_mode = st.sidebar.radio(
+        "Select Filtering Mode",
+        ["Flexible (Recommended)", "Strict (All criteria must pass)"],
+        help="Flexible mode scores stocks on multiple criteria. Strict mode requires all filters to pass."
+    )
+    
+    filters['strict_mode'] = (filter_mode == "Strict (All criteria must pass)")
+    
+    if not filters['strict_mode']:
+        filters['min_score'] = st.sidebar.slider(
+            "Minimum Score (out of 8.5)",
+            1.0, 8.5, 3.0, 0.5,
+            help="Stocks need at least this score to pass. Lower = more results, Higher = stricter selection"
+        )
     
     st.sidebar.subheader("📊 Stock Universe")
     stock_category = st.sidebar.multiselect(
@@ -572,8 +596,13 @@ def main():
                 
                 display_df = filtered_df.drop('FCF Data', axis=1).copy()
                 
+                # Reorder columns to show score first
+                cols = ['Filter_Score', 'Ticker', 'Name', 'Sector'] + [col for col in display_df.columns if col not in ['Filter_Score', 'Ticker', 'Name', 'Sector']]
+                display_df = display_df[cols]
+                
                 st.dataframe(
                     display_df.style.format({
+                        'Filter_Score': '{:.1f}',
                         'Market Cap (Cr)': '{:.0f}',
                         'Current Price': '{:.2f}',
                         'P/E Ratio': '{:.2f}',
@@ -847,10 +876,34 @@ def main():
         - **Dividend Payer**: Shows confidence and cash generation
         - **High ROE**: Return on Equity indicates profitability efficiency
         
+        ### ⚙️ Filtering Modes
+        
+        **Flexible Mode (Recommended)**
+        - Scores stocks based on how many criteria they meet
+        - Each filter gives points (max 8.5 points):
+          - ROCE: 2 points
+          - Positive FCF: 2 points
+          - Profit Growth: 2 points
+          - P/E Ratio: 1 point
+          - Debt/Equity: 1 point
+          - ROE: 1 point (if enabled)
+          - Dividend: 0.5 points (if enabled)
+        - Adjustable minimum score threshold
+        - **Best for finding quality stocks even if some data is missing**
+        
+        **Strict Mode**
+        - ALL selected filters must pass
+        - Eliminates stocks with any missing criteria
+        - More restrictive but ensures complete data
+        - **Use when you want only stocks meeting ALL requirements**
+        
         ### 📊 Stock Universe
         - **NIFTY 50**: Top 50 companies by market cap
         - **Large Cap**: Additional large-cap stocks beyond NIFTY 50
         - **Mid Cap**: Quality mid-cap stocks with growth potential
+        
+        ### 💡 Recommendation
+        Start with **Flexible Mode** and minimum score of 3-4 to get good results. Some stocks may have missing data (especially FCF and ROCE) due to Yahoo Finance limitations.
         
         ### ⚠️ Disclaimer
         - Data is fetched from Yahoo Finance in real-time
