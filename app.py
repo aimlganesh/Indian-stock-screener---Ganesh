@@ -479,17 +479,12 @@ def main():
         st.session_state.all_data = None
     if 'filtered_data' not in st.session_state:
         st.session_state.filtered_data = None
-    if 'current_filters' not in st.session_state:
-        st.session_state.current_filters = None
-    if 'stock_list' not in st.session_state:
-        st.session_state.stock_list = None
     
     st.markdown('<h1 class="main-header">📈 Indian Stock Screener with Technical Analysis</h1>', unsafe_allow_html=True)
     st.markdown("Filter Indian stocks (NIFTY 50 + Large Cap + Mid Cap) with fundamental & technical analysis")
     
-    # Sidebar - only show if not in analysis mode
-    if not st.session_state.screening_complete:
-        st.sidebar.header("🎯 Filtering Criteria")
+    # Sidebar
+    st.sidebar.header("🎯 Filtering Criteria")
     
     st.sidebar.subheader("✅ Mandatory Filters")
     
@@ -558,26 +553,16 @@ def main():
             stock_list.extend(custom_list)
             stock_list = list(set(stock_list))
     
-    # Main content - only show metrics if not in screening mode
-    if not st.session_state.screening_complete:
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Stocks to Scan", len(stock_list))
-        with col2:
-            st.metric("NIFTY 50", len([s for s in stock_list if s in NIFTY_50]))
-        with col3:
-            st.metric("Large+Mid Cap", len([s for s in stock_list if s not in NIFTY_50]))
-        
-        # Start screening button
-        if st.button("🔍 Start Screening", type="primary", use_container_width=True):
-            st.session_state.start_screening = True
-            st.rerun()
+    # Main content
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Stocks to Scan", len(stock_list))
+    with col2:
+        st.metric("NIFTY 50", len([s for s in stock_list if s in NIFTY_50]))
+    with col3:
+        st.metric("Large+Mid Cap", len([s for s in stock_list if s not in NIFTY_50]))
     
-    # Screening process
-    if st.session_state.get('start_screening', False):
-        filters = st.session_state.current_filters
-        stock_list = st.session_state.stock_list
-        
+    if st.button("🔍 Start Screening", type="primary"):
         st.info("Fetching stock data... This may take several minutes.")
         
         progress_bar = st.progress(0)
@@ -598,92 +583,69 @@ def main():
         if all_data:
             df = pd.DataFrame(all_data)
             
-            # Store in session state
-            st.session_state.all_data = df
-            st.session_state.screening_complete = True
-            st.session_state.start_screening = False
             st.success(f"✅ Successfully fetched data for {len(df)} stocks")
-            time.sleep(1)
-            st.rerun()
-        else:
-            st.error("❌ Unable to fetch data for any stocks. Please check your internet connection and try again.")
-            st.session_state.start_screening = False
-    
-    # Display results from session state
-    if st.session_state.screening_complete and st.session_state.all_data is not None:
-        df = st.session_state.all_data
-        filters = st.session_state.current_filters
-        
-        # Apply filters
-        filtered_df = apply_filters(df, filters)
-        
-        # Store filtered data in session state
-        st.session_state.filtered_data = filtered_df
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Stocks Screened", len(df))
-        with col2:
-            st.metric("Stocks Passing Filters", len(filtered_df))
-        with col3:
-            st.metric("Pass Rate", f"{len(filtered_df)/len(df)*100:.1f}%")
-        
-        if not filtered_df.empty:
-            st.subheader("✅ Filtered Stocks (Meeting Criteria)")
             
-            display_df = filtered_df.drop('FCF Data', axis=1).copy()
+            filtered_df = apply_filters(df, filters)
             
-            # Reorder columns to show score first
-            cols = ['Filter_Score', 'Ticker', 'Name', 'Sector'] + [col for col in display_df.columns if col not in ['Filter_Score', 'Ticker', 'Name', 'Sector']]
-            display_df = display_df[cols]
+            col1, col2, col3 = st.columns(3)
+            with col2:
+                st.metric("Stocks Passing Filters", len(filtered_df), f"{len(filtered_df)/len(df)*100:.1f}%")
             
-            st.dataframe(
-                display_df.style.format({
-                    'Filter_Score': '{:.1f}',
-                    'Market Cap (Cr)': '{:.0f}',
-                    'Current Price': '{:.2f}',
-                    'P/E Ratio': '{:.2f}',
-                    'Debt to Equity': '{:.2f}',
-                    'ROCE (%)': '{:.2f}',
-                    'ROE (%)': '{:.2f}',
-                    'Profit Margin (%)': '{:.2f}',
-                    'Revenue Growth (%)': '{:.2f}',
-                    '3Y Profit Growth (%)': '{:.2f}',
-                    'Dividend Yield (%)': '{:.2f}'
-                }, na_rep='N/A'),
-                height=400
-            )
-            
-            csv = filtered_df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Filtered Results as CSV",
-                data=csv,
-                file_name=f"filtered_stocks_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
-            
-            # Technical Analysis Section
-            st.markdown("---")
-            st.header("📊 Technical Analysis & Trading Signals")
-            
-            selected_stock = st.selectbox(
-                "Select a stock for detailed technical analysis",
-                filtered_df['Ticker'].tolist(),
-                key='stock_selector'  # Add key to maintain state
-            )
-            
-            if selected_stock:
-                with st.spinner(f"Analyzing {selected_stock}..."):
-                    tech_signals = analyze_technical_signals(selected_stock)
-                    
-                    if tech_signals:
-                        stock_data = filtered_df[filtered_df['Ticker'] == selected_stock].iloc[0]
+            if not filtered_df.empty:
+                st.subheader("✅ Filtered Stocks (Meeting Criteria)")
+                
+                display_df = filtered_df.drop('FCF Data', axis=1).copy()
+                
+                # Reorder columns to show score first
+                cols = ['Filter_Score', 'Ticker', 'Name', 'Sector'] + [col for col in display_df.columns if col not in ['Filter_Score', 'Ticker', 'Name', 'Sector']]
+                display_df = display_df[cols]
+                
+                st.dataframe(
+                    display_df.style.format({
+                        'Filter_Score': '{:.1f}',
+                        'Market Cap (Cr)': '{:.0f}',
+                        'Current Price': '{:.2f}',
+                        'P/E Ratio': '{:.2f}',
+                        'Debt to Equity': '{:.2f}',
+                        'ROCE (%)': '{:.2f}',
+                        'ROE (%)': '{:.2f}',
+                        'Profit Margin (%)': '{:.2f}',
+                        'Revenue Growth (%)': '{:.2f}',
+                        '3Y Profit Growth (%)': '{:.2f}',
+                        'Dividend Yield (%)': '{:.2f}'
+                    }, na_rep='N/A'),
+                    height=400
+                )
+                
+                csv = filtered_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Filtered Results as CSV",
+                    data=csv,
+                    file_name=f"filtered_stocks_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+                
+                # Technical Analysis Section
+                st.markdown("---")
+                st.header("📊 Technical Analysis & Trading Signals")
+                
+                selected_stock = st.selectbox(
+                    "Select a stock for detailed technical analysis",
+                    filtered_df['Ticker'].tolist()
+                )
+                
+                if selected_stock:
+                    with st.spinner(f"Analyzing {selected_stock}..."):
+                        tech_signals = analyze_technical_signals(selected_stock)
                         
-                        # Recommendation Banner
-                        rec_class = "buy-signal" if "BUY" in tech_signals['recommendation'] else "sell-signal" if "SELL" in tech_signals['recommendation'] else "neutral-signal"
-                        st.markdown(f'<div class="{rec_class}">Overall Recommendation: {tech_signals["recommendation"]} (Score: {tech_signals["score"]})</div>', unsafe_allow_html=True)
-                        
-                        st.markdown("---")
+                        if tech_signals:
+                            stock_data = filtered_df[filtered_df['Ticker'] == selected_stock].iloc[0]
+                            
+                            # Recommendation Banner
+                            rec_class = "buy-signal" if "BUY" in tech_signals['recommendation'] else "sell-signal" if "SELL" in tech_signals['recommendation'] else "neutral-signal"
+                            st.markdown(f'<div class="{rec_class}">Overall Recommendation: {tech_signals["recommendation"]} (Score: {tech_signals["score"]})</div>', unsafe_allow_html=True)
+                            
+                            st.markdown("---")
                             
                             # Key Metrics
                             col1, col2, col3, col4 = st.columns(4)
@@ -836,10 +798,8 @@ def main():
                             st.error("Unable to fetch technical analysis data for this stock.")
             else:
                 st.warning("⚠️ No stocks passed the filtering criteria. Try relaxing some filters.")
-                if st.button("🔄 Adjust Filters & Try Again"):
-                    st.session_state.screening_complete = False
-                    st.session_state.filtered_data = None
-                    st.rerun()
+        else:
+            st.error("❌ Unable to fetch data for any stocks. Please check your internet connection and try again.")
     
     # Information sections
     with st.expander("ℹ️ Understanding Technical Indicators"):
