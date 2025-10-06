@@ -428,6 +428,19 @@ def main():
             stock_list.extend(MID_CAP_STOCKS)
         stock_list = list(set(stock_list))
         
+        # Custom stocks option
+        use_custom = st.sidebar.checkbox("Add custom tickers")
+        if use_custom:
+            custom_stocks = st.sidebar.text_area(
+                "Enter ticker symbols (one per line, with .NS suffix)",
+                placeholder="Example:\nRELIANCE.NS\nTCS.NS\nINFY.NS",
+                height=100
+            )
+            if custom_stocks:
+                custom_list = [s.strip() for s in custom_stocks.split('\n') if s.strip()]
+                stock_list.extend(custom_list)
+                stock_list = list(set(stock_list))
+        
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Total Stocks to Scan", len(stock_list))
