@@ -375,6 +375,12 @@ def main():
         st.session_state.filtered_data = None
     if 'tech_analysis' not in st.session_state:
         st.session_state.tech_analysis = None
+    if 'screening_timestamp' not in st.session_state:
+        st.session_state.screening_timestamp = None
+    if 'tech_timestamp' not in st.session_state:
+        st.session_state.tech_timestamp = None
+    if 'individual_refresh_times' not in st.session_state:
+        st.session_state.individual_refresh_times = {}
     
     st.markdown('<h1 class="main-header">📈 Indian Stock Screener with Technical Analysis</h1>', unsafe_allow_html=True)
     
@@ -471,6 +477,7 @@ def main():
                 df = pd.DataFrame(all_data)
                 filtered_df = apply_filters(df, filters)
                 st.session_state.filtered_data = filtered_df
+                st.session_state.screening_timestamp = datetime.now()
                 st.session_state.page = 'results'
                 st.rerun()
             else:
@@ -480,10 +487,27 @@ def main():
     elif st.session_state.page == 'results':
         # Sidebar
         st.sidebar.header("📊 Screening Complete")
+        
+        # Show data freshness
+        if st.session_state.screening_timestamp:
+            time_elapsed = datetime.now() - st.session_state.screening_timestamp
+            minutes_ago = int(time_elapsed.total_seconds() / 60)
+            hours_ago = int(minutes_ago / 60)
+            
+            if hours_ago > 0:
+                freshness_text = f"🕐 Data fetched {hours_ago}h {minutes_ago % 60}m ago"
+            else:
+                freshness_text = f"🕐 Data fetched {minutes_ago}m ago"
+            
+            st.sidebar.info(freshness_text)
+            st.sidebar.caption(f"Last updated: {st.session_state.screening_timestamp.strftime('%I:%M %p, %d %b %Y')}")
+        
         if st.sidebar.button("🔄 New Screening", type="primary", use_container_width=True):
             st.session_state.page = 'setup'
             st.session_state.filtered_data = None
             st.session_state.tech_analysis = None
+            st.session_state.screening_timestamp = None
+            st.session_state.tech_timestamp = None
             st.rerun()
         
         filtered_df = st.session_state.filtered_data
@@ -496,6 +520,16 @@ def main():
                 if st.button("📊 Generate Technical Analysis for All Stocks", use_container_width=True):
                     st.session_state.page = 'tech_analysis'
                     st.rerun()
+            
+            # Show timestamp
+            if st.session_state.screening_timestamp:
+                time_elapsed = datetime.now() - st.session_state.screening_timestamp
+                minutes_ago = int(time_elapsed.total_seconds() / 60)
+                if minutes_ago < 60:
+                    st.caption(f"⏱️ Fundamental data age: {minutes_ago} minutes old")
+                else:
+                    hours_ago = int(minutes_ago / 60)
+                    st.caption(f"⏱️ Fundamental data age: {hours_ago}h {minutes_ago % 60}m old")
             
             st.subheader("✅ Filtered Stocks")
             display_df = filtered_df.drop('FCF Data', axis=1).copy()
@@ -524,6 +558,21 @@ def main():
     # Technical Analysis Page
     elif st.session_state.page == 'tech_analysis':
         st.sidebar.header("📊 Technical Analysis")
+        
+        # Show data freshness in sidebar
+        if st.session_state.tech_timestamp:
+            time_elapsed = datetime.now() - st.session_state.tech_timestamp
+            minutes_ago = int(time_elapsed.total_seconds() / 60)
+            hours_ago = int(minutes_ago / 60)
+            
+            if hours_ago > 0:
+                freshness_text = f"🕐 Technical data: {hours_ago}h {minutes_ago % 60}m ago"
+            else:
+                freshness_text = f"🕐 Technical data: {minutes_ago}m ago"
+            
+            st.sidebar.info(freshness_text)
+            st.sidebar.caption(f"Last analyzed: {st.session_state.tech_timestamp.strftime('%I:%M %p, %d %b %Y')}")
+        
         if st.sidebar.button("⬅️ Back to Results", use_container_width=True):
             st.session_state.page = 'results'
             st.rerun()
@@ -531,6 +580,15 @@ def main():
             st.session_state.page = 'setup'
             st.session_state.filtered_data = None
             st.session_state.tech_analysis = None
+            st.session_state.screening_timestamp = None
+            st.session_state.tech_timestamp = None
+            st.session_state.individual_refresh_times = {}
+            st.rerun()
+        
+        if st.sidebar.button("🔄 Refresh All Technical Data", use_container_width=True):
+            st.session_state.tech_analysis = None
+            st.session_state.tech_timestamp = None
+            st.session_state.individual_refresh_times = {}
             st.rerun()
         
         filtered_df = st.session_state.filtered_data
@@ -560,9 +618,34 @@ def main():
             
             progress_bar.empty()
             st.session_state.tech_analysis = pd.DataFrame(tech_results)
+            st.session_state.tech_timestamp = datetime.now()
             st.success("✅ Technical analysis complete!")
         
         tech_df = st.session_state.tech_analysis
+        
+        # Show data age
+        if st.session_state.tech_timestamp:
+            time_elapsed = datetime.now() - st.session_state.tech_timestamp
+            minutes_ago = int(time_elapsed.total_seconds() / 60)
+            
+            if minutes_ago < 1:
+                age_text = "⏱️ Technical data: Less than 1 minute old (Live)"
+                age_color = "green"
+            elif minutes_ago < 5:
+                age_text = f"⏱️ Technical data: {minutes_ago} minutes old (Recent)"
+                age_color = "green"
+            elif minutes_ago < 15:
+                age_text = f"⏱️ Technical data: {minutes_ago} minutes old"
+                age_color = "orange"
+            else:
+                hours_ago = int(minutes_ago / 60)
+                if hours_ago > 0:
+                    age_text = f"⏱️ Technical data: {hours_ago}h {minutes_ago % 60}m old (Consider refreshing)"
+                else:
+                    age_text = f"⏱️ Technical data: {minutes_ago} minutes old (Consider refreshing)"
+                age_color = "red"
+            
+            st.markdown(f":{age_color}[{age_text}]")
         
         # Summary Table
         st.subheader("📊 Technical Analysis Summary - All Stocks")
@@ -601,12 +684,54 @@ def main():
         st.subheader("📈 Detailed Stock Analysis")
         
         stock_names = [f"{row['Ticker']} - {row['Name']}" for _, row in tech_df.iterrows()]
-        selected = st.selectbox("Select stock for detailed view:", stock_names, key='stock_detail_selector')
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            selected = st.selectbox("Select stock for detailed view:", stock_names, key='stock_detail_selector')
         
         if selected:
             ticker = selected.split(' - ')[0]
+            
+            # Refresh button for individual stock
+            with col2:
+                st.write("")  # Spacing
+                st.write("")  # Spacing
+                if st.button(f"🔄 Refresh {ticker}", use_container_width=True, key=f'refresh_{ticker}'):
+                    # Refresh this specific stock's data
+                    with st.spinner(f"Refreshing {ticker}..."):
+                        tech = analyze_technical_signals(ticker)
+                        if tech:
+                            # Update in the dataframe
+                            idx = tech_df[tech_df['Ticker'] == ticker].index[0]
+                            tech_df.loc[idx, 'Current Price'] = tech['current_price']
+                            tech_df.loc[idx, 'RSI'] = tech['rsi']
+                            tech_df.loc[idx, 'Signal'] = tech['signal']
+                            tech_df.loc[idx, 'Recommendation'] = tech['recommendation']
+                            tech_df.loc[idx, 'Score'] = tech['score']
+                            tech_df.loc[idx, 'data'] = tech.get('data')
+                            
+                            st.session_state.tech_analysis = tech_df
+                            st.session_state.individual_refresh_times[ticker] = datetime.now()
+                            st.success(f"✅ {ticker} refreshed!")
+                            st.rerun()
+            
             stock_tech = tech_df[tech_df['Ticker'] == ticker].iloc[0]
             stock_fund = filtered_df[filtered_df['Ticker'] == ticker].iloc[0]
+            
+            # Show individual stock data age
+            if ticker in st.session_state.individual_refresh_times:
+                last_refresh = st.session_state.individual_refresh_times[ticker]
+                time_diff = datetime.now() - last_refresh
+                seconds_ago = int(time_diff.total_seconds())
+                if seconds_ago < 60:
+                    st.success(f"🕐 {ticker} data: {seconds_ago} seconds old (Just refreshed!)")
+                else:
+                    minutes_ago = int(seconds_ago / 60)
+                    st.info(f"🕐 {ticker} data: {minutes_ago} minutes old | Last refreshed: {last_refresh.strftime('%I:%M:%S %p')}")
+            elif st.session_state.tech_timestamp:
+                time_diff = datetime.now() - st.session_state.tech_timestamp
+                minutes_ago = int(time_diff.total_seconds() / 60)
+                st.info(f"🕐 {ticker} data: {minutes_ago} minutes old (from initial scan)")
             
             rec_class = "buy-signal" if "BUY" in stock_tech['Recommendation'] else "sell-signal" if "SELL" in stock_tech['Recommendation'] else "neutral-signal"
             st.markdown(f'<div class="{rec_class}">Recommendation: {stock_tech["Recommendation"]} (Score: {stock_tech["Score"]})</div>', unsafe_allow_html=True)
