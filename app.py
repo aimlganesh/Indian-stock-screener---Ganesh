@@ -43,7 +43,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Comprehensive NSE Stock List (NIFTY 50 + Large Cap + Mid Cap)
+# Comprehensive NSE Stock List
 NIFTY_50 = [
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "HINDUNILVR.NS",
     "ICICIBANK.NS", "SBIN.NS", "BHARTIARTL.NS", "ITC.NS", "KOTAKBANK.NS",
@@ -81,15 +81,12 @@ MID_CAP_STOCKS = [
 ALL_STOCKS = list(set(NIFTY_50 + LARGE_CAP_ADDITIONAL + MID_CAP_STOCKS))
 
 def calculate_sma(data, period):
-    """Calculate Simple Moving Average"""
     return data['Close'].rolling(window=period).mean()
 
 def calculate_ema(data, period):
-    """Calculate Exponential Moving Average"""
     return data['Close'].ewm(span=period, adjust=False).mean()
 
 def calculate_rsi(data, period=14):
-    """Calculate Relative Strength Index"""
     delta = data['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
@@ -98,7 +95,6 @@ def calculate_rsi(data, period=14):
     return rsi
 
 def calculate_macd(data):
-    """Calculate MACD"""
     ema12 = data['Close'].ewm(span=12, adjust=False).mean()
     ema26 = data['Close'].ewm(span=26, adjust=False).mean()
     macd = ema12 - ema26
@@ -107,32 +103,11 @@ def calculate_macd(data):
     return macd, signal, histogram
 
 def calculate_bollinger_bands(data, period=20, std_dev=2):
-    """Calculate Bollinger Bands"""
     sma = data['Close'].rolling(window=period).mean()
     std = data['Close'].rolling(window=period).std()
     upper_band = sma + (std * std_dev)
     lower_band = sma - (std * std_dev)
     return upper_band, sma, lower_band
-
-def calculate_atr(data, period=14):
-    """Calculate Average True Range for volatility"""
-    high_low = data['High'] - data['Low']
-    high_close = np.abs(data['High'] - data['Close'].shift())
-    low_close = np.abs(data['Low'] - data['Close'].shift())
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = np.max(ranges, axis=1)
-    atr = true_range.rolling(window=period).mean()
-    return atr
-
-def identify_support_resistance(data, window=20):
-    """Identify support and resistance levels"""
-    highs = data['High'].rolling(window=window, center=True).max()
-    lows = data['Low'].rolling(window=window, center=True).min()
-    
-    resistance = data[data['High'] == highs]['High'].dropna().unique()
-    support = data[data['Low'] == lows]['Low'].dropna().unique()
-    
-    return sorted(support)[-3:] if len(support) > 0 else [], sorted(resistance)[-3:] if len(resistance) > 0 else []
 
 def analyze_technical_signals(ticker, period='6mo'):
     """Comprehensive technical analysis"""
@@ -147,134 +122,78 @@ def analyze_technical_signals(ticker, period='6mo'):
         data['SMA_20'] = calculate_sma(data, 20)
         data['SMA_50'] = calculate_sma(data, 50)
         data['SMA_200'] = calculate_sma(data, 200)
-        data['EMA_12'] = calculate_ema(data, 12)
         data['RSI'] = calculate_rsi(data)
         data['MACD'], data['MACD_Signal'], data['MACD_Hist'] = calculate_macd(data)
         data['BB_Upper'], data['BB_Middle'], data['BB_Lower'] = calculate_bollinger_bands(data)
-        data['ATR'] = calculate_atr(data)
         
         current = data.iloc[-1]
         prev = data.iloc[-2]
         
         signals = {
-            'data': data,
+            'ticker': ticker,
             'current_price': current['Close'],
-            'sma_20': current['SMA_20'],
-            'sma_50': current['SMA_50'],
-            'sma_200': current['SMA_200'],
             'rsi': current['RSI'],
-            'macd': current['MACD'],
-            'macd_signal': current['MACD_Signal'],
-            'bb_position': (current['Close'] - current['BB_Lower']) / (current['BB_Upper'] - current['BB_Lower']) * 100,
-            'volume': current['Volume'],
-            'avg_volume': data['Volume'].tail(20).mean(),
-            'atr': current['ATR'],
-            'volatility': (current['ATR'] / current['Close']) * 100
+            'data': data
         }
         
-        # Support and Resistance
-        support_levels, resistance_levels = identify_support_resistance(data)
-        signals['support_levels'] = support_levels
-        signals['resistance_levels'] = resistance_levels
-        
         # Generate signals
-        buy_signals = []
-        sell_signals = []
         score = 0
         
         # Trend Analysis
         if current['Close'] > current['SMA_20'] > current['SMA_50']:
-            buy_signals.append("Strong uptrend: Price > SMA20 > SMA50")
             score += 2
         elif current['Close'] > current['SMA_20']:
-            buy_signals.append("Price above SMA20 (short-term bullish)")
             score += 1
         elif current['Close'] < current['SMA_20'] < current['SMA_50']:
-            sell_signals.append("Strong downtrend: Price < SMA20 < SMA50")
             score -= 2
         
         # Golden Cross / Death Cross
         if current['SMA_50'] > current['SMA_200'] and prev['SMA_50'] <= prev['SMA_200']:
-            buy_signals.append("🌟 Golden Cross: SMA50 crossed above SMA200")
             score += 3
         elif current['SMA_50'] < current['SMA_200'] and prev['SMA_50'] >= prev['SMA_200']:
-            sell_signals.append("⚠️ Death Cross: SMA50 crossed below SMA200")
             score -= 3
         
         # RSI Analysis
         if current['RSI'] < 30:
-            buy_signals.append(f"RSI Oversold: {current['RSI']:.1f} (potential bounce)")
             score += 2
         elif current['RSI'] > 70:
-            sell_signals.append(f"RSI Overbought: {current['RSI']:.1f} (potential correction)")
             score -= 2
         elif 40 <= current['RSI'] <= 60:
-            buy_signals.append(f"RSI Neutral: {current['RSI']:.1f} (healthy)")
             score += 1
         
         # MACD Analysis
         if current['MACD'] > current['MACD_Signal'] and prev['MACD'] <= prev['MACD_Signal']:
-            buy_signals.append("MACD bullish crossover")
             score += 2
         elif current['MACD'] < current['MACD_Signal'] and prev['MACD'] >= prev['MACD_Signal']:
-            sell_signals.append("MACD bearish crossover")
             score -= 2
         
-        # Bollinger Bands
-        if signals['bb_position'] < 20:
-            buy_signals.append("Price near lower Bollinger Band (oversold)")
-            score += 1
-        elif signals['bb_position'] > 80:
-            sell_signals.append("Price near upper Bollinger Band (overbought)")
-            score -= 1
-        
-        # Volume Analysis
-        if current['Volume'] > signals['avg_volume'] * 1.5:
-            if current['Close'] > prev['Close']:
-                buy_signals.append("High volume with price increase (accumulation)")
-                score += 1
-            else:
-                sell_signals.append("High volume with price decrease (distribution)")
-                score -= 1
-        
-        # Support/Resistance
-        if support_levels and current['Close'] <= min(support_levels) * 1.02:
-            buy_signals.append(f"Price near support level: ₹{min(support_levels):.2f}")
-            score += 1
-        if resistance_levels and current['Close'] >= max(resistance_levels) * 0.98:
-            sell_signals.append(f"Price near resistance level: ₹{max(resistance_levels):.2f}")
-            score -= 1
-        
-        signals['buy_signals'] = buy_signals
-        signals['sell_signals'] = sell_signals
         signals['score'] = score
         
         # Overall recommendation
         if score >= 4:
             signals['recommendation'] = "STRONG BUY"
-            signals['rec_color'] = "green"
+            signals['signal'] = "BUY"
         elif score >= 2:
             signals['recommendation'] = "BUY"
-            signals['rec_color'] = "lightgreen"
+            signals['signal'] = "BUY"
         elif score <= -4:
             signals['recommendation'] = "STRONG SELL"
-            signals['rec_color'] = "red"
+            signals['signal'] = "SELL"
         elif score <= -2:
             signals['recommendation'] = "SELL"
-            signals['rec_color'] = "lightcoral"
+            signals['signal'] = "SELL"
         else:
-            signals['recommendation'] = "HOLD/NEUTRAL"
-            signals['rec_color'] = "yellow"
+            signals['recommendation'] = "HOLD"
+            signals['signal'] = "HOLD"
         
         return signals
         
     except Exception as e:
-        st.warning(f"Technical analysis error for {ticker}: {str(e)}")
         return None
 
-def plot_candlestick_chart(ticker, signals):
-    """Create interactive candlestick chart with indicators"""
-    data = signals['data'].tail(100)
+def plot_candlestick_chart(ticker, data):
+    """Create interactive candlestick chart"""
+    chart_data = data.tail(100)
     
     fig = make_subplots(
         rows=3, cols=1,
@@ -286,49 +205,37 @@ def plot_candlestick_chart(ticker, signals):
     
     # Candlestick
     fig.add_trace(go.Candlestick(
-        x=data.index,
-        open=data['Open'],
-        high=data['High'],
-        low=data['Low'],
-        close=data['Close'],
+        x=chart_data.index,
+        open=chart_data['Open'],
+        high=chart_data['High'],
+        low=chart_data['Low'],
+        close=chart_data['Close'],
         name='Price'
     ), row=1, col=1)
     
     # Moving Averages
-    fig.add_trace(go.Scatter(x=data.index, y=data['SMA_20'], name='SMA 20', line=dict(color='orange', width=1)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=data.index, y=data['SMA_50'], name='SMA 50', line=dict(color='blue', width=1)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=data.index, y=data['SMA_200'], name='SMA 200', line=dict(color='purple', width=1)), row=1, col=1)
-    
-    # Bollinger Bands
-    fig.add_trace(go.Scatter(x=data.index, y=data['BB_Upper'], name='BB Upper', line=dict(color='gray', width=1, dash='dash')), row=1, col=1)
-    fig.add_trace(go.Scatter(x=data.index, y=data['BB_Lower'], name='BB Lower', line=dict(color='gray', width=1, dash='dash'), fill='tonexty'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=chart_data.index, y=chart_data['SMA_20'], name='SMA 20', line=dict(color='orange', width=1)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=chart_data.index, y=chart_data['SMA_50'], name='SMA 50', line=dict(color='blue', width=1)), row=1, col=1)
     
     # RSI
-    fig.add_trace(go.Scatter(x=data.index, y=data['RSI'], name='RSI', line=dict(color='purple', width=2)), row=2, col=1)
+    fig.add_trace(go.Scatter(x=chart_data.index, y=chart_data['RSI'], name='RSI', line=dict(color='purple', width=2)), row=2, col=1)
     fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
     fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
     
     # MACD
-    fig.add_trace(go.Scatter(x=data.index, y=data['MACD'], name='MACD', line=dict(color='blue', width=2)), row=3, col=1)
-    fig.add_trace(go.Scatter(x=data.index, y=data['MACD_Signal'], name='Signal', line=dict(color='red', width=2)), row=3, col=1)
-    fig.add_trace(go.Bar(x=data.index, y=data['MACD_Hist'], name='Histogram'), row=3, col=1)
+    fig.add_trace(go.Scatter(x=chart_data.index, y=chart_data['MACD'], name='MACD', line=dict(color='blue', width=2)), row=3, col=1)
+    fig.add_trace(go.Scatter(x=chart_data.index, y=chart_data['MACD_Signal'], name='Signal', line=dict(color='red', width=2)), row=3, col=1)
     
     fig.update_layout(
         title=f'{ticker} Technical Analysis',
         height=800,
         xaxis_rangeslider_visible=False,
-        showlegend=True,
-        hovermode='x unified'
+        showlegend=True
     )
-    
-    fig.update_yaxes(title_text="Price", row=1, col=1)
-    fig.update_yaxes(title_text="RSI", row=2, col=1)
-    fig.update_yaxes(title_text="MACD", row=3, col=1)
     
     return fig
 
 def calculate_roce(stock_info):
-    """Calculate Return on Capital Employed"""
     try:
         ebit = stock_info.get('ebitda', 0)
         total_assets = stock_info.get('totalAssets', 0)
@@ -344,7 +251,6 @@ def calculate_roce(stock_info):
     return None
 
 def get_quarterly_cashflow(ticker):
-    """Get quarterly free cash flow data"""
     try:
         stock = yf.Ticker(ticker)
         cf = stock.quarterly_cashflow
@@ -356,14 +262,12 @@ def get_quarterly_cashflow(ticker):
     return []
 
 def check_positive_fcf(fcf_list):
-    """Check if at least 3 of last 4 quarters have positive FCF"""
     if len(fcf_list) >= 4:
         positive_count = sum(1 for x in fcf_list[:4] if x > 0)
         return positive_count >= 3
     return False
 
 def get_profit_growth(ticker):
-    """Calculate 3-year profit growth"""
     try:
         stock = yf.Ticker(ticker)
         financials = stock.financials
@@ -380,7 +284,6 @@ def get_profit_growth(ticker):
     return None
 
 def get_stock_data(ticker):
-    """Fetch comprehensive stock data"""
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
@@ -415,21 +318,16 @@ def get_stock_data(ticker):
         return None
 
 def apply_filters(df, filters):
-    """Apply filtering criteria - now more flexible with missing data"""
     filtered_df = df.copy()
-    
-    # Add a score column to rank stocks
     filtered_df['Filter_Score'] = 0
     
     if filters['roce']:
-        # Give points instead of eliminating
         roce_mask = (filtered_df['ROCE (%)'].notna()) & (filtered_df['ROCE (%)'] >= filters['roce_min'])
         filtered_df.loc[roce_mask, 'Filter_Score'] += 2
         if filters.get('strict_mode', False):
             filtered_df = filtered_df[roce_mask]
     
     if filters['fcf']:
-        # FCF check - give points if available and positive
         fcf_mask = filtered_df['Positive FCF (3/4Q)'] == True
         filtered_df.loc[fcf_mask, 'Filter_Score'] += 2
         if filters.get('strict_mode', False):
@@ -461,457 +359,357 @@ def apply_filters(df, filters):
         roe_mask = (filtered_df['ROE (%)'].notna()) & (filtered_df['ROE (%)'] >= filters['roe_min'])
         filtered_df.loc[roe_mask, 'Filter_Score'] += 1
     
-    # In flexible mode, keep stocks with at least minimum score
     if not filters.get('strict_mode', False):
-        min_score = filters.get('min_score', 3)  # At least 3 out of 8.5 possible points
+        min_score = filters.get('min_score', 3)
         filtered_df = filtered_df[filtered_df['Filter_Score'] >= min_score]
     
-    # Sort by score
     filtered_df = filtered_df.sort_values('Filter_Score', ascending=False)
     
     return filtered_df
 
 def main():
     # Initialize session state
-    if 'screening_complete' not in st.session_state:
-        st.session_state.screening_complete = False
-    if 'all_data' not in st.session_state:
-        st.session_state.all_data = None
+    if 'page' not in st.session_state:
+        st.session_state.page = 'setup'
     if 'filtered_data' not in st.session_state:
         st.session_state.filtered_data = None
+    if 'tech_analysis' not in st.session_state:
+        st.session_state.tech_analysis = None
     
     st.markdown('<h1 class="main-header">📈 Indian Stock Screener with Technical Analysis</h1>', unsafe_allow_html=True)
-    st.markdown("Filter Indian stocks (NIFTY 50 + Large Cap + Mid Cap) with fundamental & technical analysis")
     
-    # Sidebar
-    st.sidebar.header("🎯 Filtering Criteria")
-    
-    st.sidebar.subheader("✅ Mandatory Filters")
-    
-    filters = {}
-    filters['roce'] = st.sidebar.checkbox("ROCE Filter", value=True)
-    filters['roce_min'] = st.sidebar.slider("Minimum ROCE (%)", 10, 30, 15, 1) if filters['roce'] else 15
-    
-    filters['fcf'] = st.sidebar.checkbox("Positive FCF (3/4 Quarters)", value=True)
-    
-    filters['pe'] = st.sidebar.checkbox("P/E Ratio Filter", value=True)
-    filters['pe_max'] = st.sidebar.slider("Maximum P/E", 10, 100, 40, 5) if filters['pe'] else 40
-    
-    filters['profit_growth'] = st.sidebar.checkbox("Profit Growth Filter", value=True)
-    filters['profit_growth_min'] = st.sidebar.slider("Min 3Y Profit Growth (%)", 0, 30, 10, 1) if filters['profit_growth'] else 10
-    
-    filters['debt_equity'] = st.sidebar.checkbox("Debt/Equity Filter", value=True)
-    filters['debt_equity_max'] = st.sidebar.slider("Max Debt/Equity", 0.0, 2.0, 1.0, 0.1) if filters['debt_equity'] else 1.0
-    
-    st.sidebar.subheader("🎯 Preferred Filters")
-    
-    filters['dividend'] = st.sidebar.checkbox("Dividend Payer", value=False)
-    filters['roe'] = st.sidebar.checkbox("ROE Filter", value=False)
-    filters['roe_min'] = st.sidebar.slider("Minimum ROE (%)", 10, 30, 15, 1) if filters['roe'] else 15
-    
-    st.sidebar.subheader("⚙️ Filter Mode")
-    filter_mode = st.sidebar.radio(
-        "Select Filtering Mode",
-        ["Flexible (Recommended)", "Strict (All criteria must pass)"],
-        help="Flexible mode scores stocks on multiple criteria. Strict mode requires all filters to pass."
-    )
-    
-    filters['strict_mode'] = (filter_mode == "Strict (All criteria must pass)")
-    
-    if not filters['strict_mode']:
-        filters['min_score'] = st.sidebar.slider(
-            "Minimum Score (out of 8.5)",
-            1.0, 8.5, 3.0, 0.5,
-            help="Stocks need at least this score to pass. Lower = more results, Higher = stricter selection"
+    # Setup Page
+    if st.session_state.page == 'setup':
+        st.markdown("Filter Indian stocks (NIFTY 50 + Large Cap + Mid Cap) with fundamental & technical analysis")
+        
+        # Sidebar Filters
+        st.sidebar.header("🎯 Filtering Criteria")
+        st.sidebar.subheader("✅ Mandatory Filters")
+        
+        filters = {}
+        filters['roce'] = st.sidebar.checkbox("ROCE Filter", value=True)
+        filters['roce_min'] = st.sidebar.slider("Minimum ROCE (%)", 10, 30, 15, 1) if filters['roce'] else 15
+        filters['fcf'] = st.sidebar.checkbox("Positive FCF (3/4 Quarters)", value=True)
+        filters['pe'] = st.sidebar.checkbox("P/E Ratio Filter", value=True)
+        filters['pe_max'] = st.sidebar.slider("Maximum P/E", 10, 100, 40, 5) if filters['pe'] else 40
+        filters['profit_growth'] = st.sidebar.checkbox("Profit Growth Filter", value=True)
+        filters['profit_growth_min'] = st.sidebar.slider("Min 3Y Profit Growth (%)", 0, 30, 10, 1) if filters['profit_growth'] else 10
+        filters['debt_equity'] = st.sidebar.checkbox("Debt/Equity Filter", value=True)
+        filters['debt_equity_max'] = st.sidebar.slider("Max Debt/Equity", 0.0, 2.0, 1.0, 0.1) if filters['debt_equity'] else 1.0
+        
+        st.sidebar.subheader("🎯 Preferred Filters")
+        filters['dividend'] = st.sidebar.checkbox("Dividend Payer", value=False)
+        filters['roe'] = st.sidebar.checkbox("ROE Filter", value=False)
+        filters['roe_min'] = st.sidebar.slider("Minimum ROE (%)", 10, 30, 15, 1) if filters['roe'] else 15
+        
+        st.sidebar.subheader("⚙️ Filter Mode")
+        filter_mode = st.sidebar.radio(
+            "Select Filtering Mode",
+            ["Flexible (Recommended)", "Strict (All criteria must pass)"]
         )
-    
-    st.sidebar.subheader("📊 Stock Universe")
-    stock_category = st.sidebar.multiselect(
-        "Select Categories",
-        ["NIFTY 50", "Large Cap", "Mid Cap"],
-        default=["NIFTY 50"]
-    )
-    
-    stock_list = []
-    if "NIFTY 50" in stock_category:
-        stock_list.extend(NIFTY_50)
-    if "Large Cap" in stock_category:
-        stock_list.extend(LARGE_CAP_ADDITIONAL)
-    if "Mid Cap" in stock_category:
-        stock_list.extend(MID_CAP_STOCKS)
-    
-    stock_list = list(set(stock_list))
-    
-    use_custom = st.sidebar.checkbox("Add custom tickers")
-    if use_custom:
-        custom_stocks = st.sidebar.text_area(
-            "Enter ticker symbols (one per line, with .NS suffix)",
-            "Example:\nINFY.NS\nTCS.NS"
+        filters['strict_mode'] = (filter_mode == "Strict (All criteria must pass)")
+        
+        if not filters['strict_mode']:
+            filters['min_score'] = st.sidebar.slider("Minimum Score (out of 8.5)", 1.0, 8.5, 3.0, 0.5)
+        
+        st.sidebar.subheader("📊 Stock Universe")
+        stock_category = st.sidebar.multiselect(
+            "Select Categories",
+            ["NIFTY 50", "Large Cap", "Mid Cap"],
+            default=["NIFTY 50"]
         )
-        if custom_stocks:
-            custom_list = [s.strip() for s in custom_stocks.split('\n') if s.strip()]
-            stock_list.extend(custom_list)
-            stock_list = list(set(stock_list))
-    
-    # Main content
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total Stocks to Scan", len(stock_list))
-    with col2:
-        st.metric("NIFTY 50", len([s for s in stock_list if s in NIFTY_50]))
-    with col3:
-        st.metric("Large+Mid Cap", len([s for s in stock_list if s not in NIFTY_50]))
-    
-    if st.button("🔍 Start Screening", type="primary"):
-        st.info("Fetching stock data... This may take several minutes.")
         
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        stock_list = []
+        if "NIFTY 50" in stock_category:
+            stock_list.extend(NIFTY_50)
+        if "Large Cap" in stock_category:
+            stock_list.extend(LARGE_CAP_ADDITIONAL)
+        if "Mid Cap" in stock_category:
+            stock_list.extend(MID_CAP_STOCKS)
+        stock_list = list(set(stock_list))
         
-        all_data = []
-        for idx, ticker in enumerate(stock_list):
-            status_text.text(f"Processing {ticker}... ({idx+1}/{len(stock_list)})")
-            data = get_stock_data(ticker)
-            if data:
-                all_data.append(data)
-            progress_bar.progress((idx + 1) / len(stock_list))
-            time.sleep(0.3)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Stocks to Scan", len(stock_list))
+        with col2:
+            st.metric("NIFTY 50", len([s for s in stock_list if s in NIFTY_50]))
+        with col3:
+            st.metric("Large+Mid Cap", len([s for s in stock_list if s not in NIFTY_50]))
         
-        status_text.empty()
-        progress_bar.empty()
-        
-        if all_data:
-            df = pd.DataFrame(all_data)
+        if st.button("🔍 Start Screening", type="primary", use_container_width=True):
+            st.info("Fetching stock data... This may take several minutes.")
             
-            st.success(f"✅ Successfully fetched data for {len(df)} stocks")
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             
-            filtered_df = apply_filters(df, filters)
+            all_data = []
+            for idx, ticker in enumerate(stock_list):
+                status_text.text(f"Processing {ticker}... ({idx+1}/{len(stock_list)})")
+                data = get_stock_data(ticker)
+                if data:
+                    all_data.append(data)
+                progress_bar.progress((idx + 1) / len(stock_list))
+                time.sleep(0.3)
+            
+            status_text.empty()
+            progress_bar.empty()
+            
+            if all_data:
+                df = pd.DataFrame(all_data)
+                filtered_df = apply_filters(df, filters)
+                st.session_state.filtered_data = filtered_df
+                st.session_state.page = 'results'
+                st.rerun()
+            else:
+                st.error("❌ Unable to fetch data")
+    
+    # Results Page
+    elif st.session_state.page == 'results':
+        # Sidebar
+        st.sidebar.header("📊 Screening Complete")
+        if st.sidebar.button("🔄 New Screening", type="primary", use_container_width=True):
+            st.session_state.page = 'setup'
+            st.session_state.filtered_data = None
+            st.session_state.tech_analysis = None
+            st.rerun()
+        
+        filtered_df = st.session_state.filtered_data
+        
+        if filtered_df is not None and not filtered_df.empty:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Stocks Passing Filters", len(filtered_df))
+            with col2:
+                if st.button("📊 Generate Technical Analysis for All Stocks", use_container_width=True):
+                    st.session_state.page = 'tech_analysis'
+                    st.rerun()
+            
+            st.subheader("✅ Filtered Stocks")
+            display_df = filtered_df.drop('FCF Data', axis=1).copy()
+            cols = ['Filter_Score', 'Ticker', 'Name', 'Sector'] + [col for col in display_df.columns if col not in ['Filter_Score', 'Ticker', 'Name', 'Sector']]
+            display_df = display_df[cols]
+            
+            st.dataframe(
+                display_df.style.format({
+                    'Filter_Score': '{:.1f}',
+                    'Market Cap (Cr)': '{:.0f}',
+                    'Current Price': '{:.2f}',
+                    'P/E Ratio': '{:.2f}',
+                    'Debt to Equity': '{:.2f}',
+                    'ROCE (%)': '{:.2f}',
+                    'ROE (%)': '{:.2f}',
+                    'Profit Margin (%)': '{:.2f}',
+                    'Revenue Growth (%)': '{:.2f}',
+                    '3Y Profit Growth (%)': '{:.2f}',
+                    'Dividend Yield (%)': '{:.2f}'
+                }, na_rep='N/A'),
+                height=400
+            )
+        else:
+            st.warning("No stocks passed filters")
+    
+    # Technical Analysis Page
+    elif st.session_state.page == 'tech_analysis':
+        st.sidebar.header("📊 Technical Analysis")
+        if st.sidebar.button("⬅️ Back to Results", use_container_width=True):
+            st.session_state.page = 'results'
+            st.rerun()
+        if st.sidebar.button("🔄 New Screening", use_container_width=True):
+            st.session_state.page = 'setup'
+            st.session_state.filtered_data = None
+            st.session_state.tech_analysis = None
+            st.rerun()
+        
+        filtered_df = st.session_state.filtered_data
+        
+        # Generate technical analysis if not already done
+        if st.session_state.tech_analysis is None:
+            st.info("Analyzing technical signals for all stocks...")
+            progress_bar = st.progress(0)
+            tech_results = []
+            
+            for idx, row in filtered_df.iterrows():
+                ticker = row['Ticker']
+                tech = analyze_technical_signals(ticker)
+                if tech:
+                    tech_results.append({
+                        'Ticker': ticker,
+                        'Name': row['Name'],
+                        'Current Price': tech['current_price'],
+                        'RSI': tech['rsi'],
+                        'Signal': tech['signal'],
+                        'Recommendation': tech['recommendation'],
+                        'Score': tech['score'],
+                        'data': tech.get('data')
+                    })
+                progress_bar.progress((len(tech_results)) / len(filtered_df))
+                time.sleep(0.2)
+            
+            progress_bar.empty()
+            st.session_state.tech_analysis = pd.DataFrame(tech_results)
+            st.success("✅ Technical analysis complete!")
+        
+        tech_df = st.session_state.tech_analysis
+        
+        # Summary Table
+        st.subheader("📊 Technical Analysis Summary - All Stocks")
+        
+        summary_df = tech_df[['Ticker', 'Name', 'Current Price', 'RSI', 'Signal', 'Recommendation', 'Score']].copy()
+        
+        def color_signal(val):
+            if val == 'BUY':
+                return 'background-color: #d4edda'
+            elif val == 'SELL':
+                return 'background-color: #f8d7da'
+            else:
+                return 'background-color: #fff3cd'
+        
+        st.dataframe(
+            summary_df.style.applymap(color_signal, subset=['Signal']).format({
+                'Current Price': '₹{:.2f}',
+                'RSI': '{:.1f}',
+                'Score': '{:+d}'
+            }),
+            height=400,
+            use_container_width=True
+        )
+        
+        # Download
+        csv = summary_df.to_csv(index=False)
+        st.download_button(
+            "📥 Download Technical Analysis",
+            csv,
+            f"technical_analysis_{datetime.now().strftime('%Y%m%d')}.csv",
+            "text/csv"
+        )
+        
+        # Detailed Analysis
+        st.markdown("---")
+        st.subheader("📈 Detailed Stock Analysis")
+        
+        stock_names = [f"{row['Ticker']} - {row['Name']}" for _, row in tech_df.iterrows()]
+        selected = st.selectbox("Select stock for detailed view:", stock_names, key='stock_detail_selector')
+        
+        if selected:
+            ticker = selected.split(' - ')[0]
+            stock_tech = tech_df[tech_df['Ticker'] == ticker].iloc[0]
+            stock_fund = filtered_df[filtered_df['Ticker'] == ticker].iloc[0]
+            
+            rec_class = "buy-signal" if "BUY" in stock_tech['Recommendation'] else "sell-signal" if "SELL" in stock_tech['Recommendation'] else "neutral-signal"
+            st.markdown(f'<div class="{rec_class}">Recommendation: {stock_tech["Recommendation"]} (Score: {stock_tech["Score"]})</div>', unsafe_allow_html=True)
+            
+            st.markdown("---")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Current Price", f"₹{stock_tech['Current Price']:.2f}")
+            with col2:
+                st.metric("RSI", f"{stock_tech['RSI']:.1f}")
+            with col3:
+                st.metric("P/E Ratio", f"{stock_fund['P/E Ratio']:.2f}" if pd.notna(stock_fund['P/E Ratio']) else "N/A")
+            with col4:
+                st.metric("ROCE", f"{stock_fund['ROCE (%)']:.2f}%" if pd.notna(stock_fund['ROCE (%)']) else "N/A")
+            
+            # Chart
+            if stock_tech['data'] is not None and not stock_tech['data'].empty:
+                st.markdown("---")
+                st.subheader("📈 Interactive Chart")
+                chart = plot_candlestick_chart(ticker, stock_tech['data'])
+                st.plotly_chart(chart, use_container_width=True)
+            
+            # Fundamental Metrics
+            st.markdown("---")
+            st.subheader("📊 Fundamental Metrics")
             
             col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Filter Score", f"{stock_fund['Filter_Score']:.1f}/8.5")
+                st.metric("Debt/Equity", f"{stock_fund['Debt to Equity']:.2f}" if pd.notna(stock_fund['Debt to Equity']) else "N/A")
             with col2:
-                st.metric("Stocks Passing Filters", len(filtered_df), f"{len(filtered_df)/len(df)*100:.1f}%")
-            
-            if not filtered_df.empty:
-                st.subheader("✅ Filtered Stocks (Meeting Criteria)")
-                
-                display_df = filtered_df.drop('FCF Data', axis=1).copy()
-                
-                # Reorder columns to show score first
-                cols = ['Filter_Score', 'Ticker', 'Name', 'Sector'] + [col for col in display_df.columns if col not in ['Filter_Score', 'Ticker', 'Name', 'Sector']]
-                display_df = display_df[cols]
-                
-                st.dataframe(
-                    display_df.style.format({
-                        'Filter_Score': '{:.1f}',
-                        'Market Cap (Cr)': '{:.0f}',
-                        'Current Price': '{:.2f}',
-                        'P/E Ratio': '{:.2f}',
-                        'Debt to Equity': '{:.2f}',
-                        'ROCE (%)': '{:.2f}',
-                        'ROE (%)': '{:.2f}',
-                        'Profit Margin (%)': '{:.2f}',
-                        'Revenue Growth (%)': '{:.2f}',
-                        '3Y Profit Growth (%)': '{:.2f}',
-                        'Dividend Yield (%)': '{:.2f}'
-                    }, na_rep='N/A'),
-                    height=400
-                )
-                
-                csv = filtered_df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Filtered Results as CSV",
-                    data=csv,
-                    file_name=f"filtered_stocks_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
-                
-                # Technical Analysis Section
-                st.markdown("---")
-                st.header("📊 Technical Analysis & Trading Signals")
-                
-                selected_stock = st.selectbox(
-                    "Select a stock for detailed technical analysis",
-                    filtered_df['Ticker'].tolist()
-                )
-                
-                if selected_stock:
-                    with st.spinner(f"Analyzing {selected_stock}..."):
-                        tech_signals = analyze_technical_signals(selected_stock)
-                        
-                        if tech_signals:
-                            stock_data = filtered_df[filtered_df['Ticker'] == selected_stock].iloc[0]
-                            
-                            # Recommendation Banner
-                            rec_class = "buy-signal" if "BUY" in tech_signals['recommendation'] else "sell-signal" if "SELL" in tech_signals['recommendation'] else "neutral-signal"
-                            st.markdown(f'<div class="{rec_class}">Overall Recommendation: {tech_signals["recommendation"]} (Score: {tech_signals["score"]})</div>', unsafe_allow_html=True)
-                            
-                            st.markdown("---")
-                            
-                            # Key Metrics
-                            col1, col2, col3, col4 = st.columns(4)
-                            
-                            with col1:
-                                st.metric("Current Price", f"₹{tech_signals['current_price']:.2f}")
-                                st.metric("RSI", f"{tech_signals['rsi']:.1f}", 
-                                         "Oversold" if tech_signals['rsi'] < 30 else "Overbought" if tech_signals['rsi'] > 70 else "Neutral")
-                            
-                            with col2:
-                                st.metric("SMA 20", f"₹{tech_signals['sma_20']:.2f}")
-                                st.metric("SMA 50", f"₹{tech_signals['sma_50']:.2f}")
-                            
-                            with col3:
-                                st.metric("MACD", f"{tech_signals['macd']:.2f}")
-                                st.metric("Volatility", f"{tech_signals['volatility']:.2f}%")
-                            
-                            with col4:
-                                volume_change = ((tech_signals['volume'] - tech_signals['avg_volume']) / tech_signals['avg_volume'] * 100)
-                                st.metric("Volume vs Avg", f"{volume_change:+.1f}%")
-                                st.metric("BB Position", f"{tech_signals['bb_position']:.1f}%")
-                            
-                            st.markdown("---")
-                            
-                            # Buy and Sell Signals
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
-                                st.subheader("🟢 Buy Signals")
-                                if tech_signals['buy_signals']:
-                                    for signal in tech_signals['buy_signals']:
-                                        st.success(f"✓ {signal}")
-                                else:
-                                    st.info("No strong buy signals detected")
-                            
-                            with col2:
-                                st.subheader("🔴 Sell Signals")
-                                if tech_signals['sell_signals']:
-                                    for signal in tech_signals['sell_signals']:
-                                        st.error(f"✗ {signal}")
-                                else:
-                                    st.info("No strong sell signals detected")
-                            
-                            # Support and Resistance
-                            if tech_signals['support_levels'] or tech_signals['resistance_levels']:
-                                st.markdown("---")
-                                st.subheader("📍 Key Levels")
-                                col1, col2 = st.columns(2)
-                                
-                                with col1:
-                                    if tech_signals['support_levels']:
-                                        st.write("**Support Levels:**")
-                                        for level in tech_signals['support_levels']:
-                                            st.write(f"₹{level:.2f}")
-                                
-                                with col2:
-                                    if tech_signals['resistance_levels']:
-                                        st.write("**Resistance Levels:**")
-                                        for level in tech_signals['resistance_levels']:
-                                            st.write(f"₹{level:.2f}")
-                            
-                            # Candlestick Chart
-                            st.markdown("---")
-                            st.subheader("📈 Interactive Chart")
-                            
-                            chart = plot_candlestick_chart(selected_stock, tech_signals)
-                            st.plotly_chart(chart, use_container_width=True)
-                            
-                            # Trading Strategy Recommendations
-                            st.markdown("---")
-                            st.subheader("💡 Trading Strategy Recommendations")
-                            
-                            if tech_signals['score'] >= 3:
-                                st.success("""
-                                **Bullish Strategy:**
-                                - Consider buying in tranches if price dips to support levels
-                                - Set stop loss below recent support
-                                - Target: Next resistance level
-                                - Watch for volume confirmation on breakouts
-                                """)
-                            elif tech_signals['score'] <= -3:
-                                st.error("""
-                                **Bearish Strategy:**
-                                - Consider booking profits if holding
-                                - Avoid fresh buying positions
-                                - Wait for price to stabilize near support
-                                - Watch for reversal signals (RSI divergence, MACD crossover)
-                                """)
-                            else:
-                                st.info("""
-                                **Neutral Strategy:**
-                                - Wait for clearer signals before taking position
-                                - Consider selling at resistance if holding
-                                - Look for breakout or breakdown confirmation
-                                - Monitor volume and momentum indicators
-                                """)
-                            
-                            # Key Technical Insights
-                            st.markdown("---")
-                            st.subheader("🔍 Key Technical Insights")
-                            
-                            insights = []
-                            
-                            # Trend strength
-                            if tech_signals['current_price'] > tech_signals['sma_200']:
-                                insights.append("✅ **Long-term uptrend** - Price above 200 SMA")
-                            else:
-                                insights.append("⚠️ **Long-term downtrend** - Price below 200 SMA")
-                            
-                            # Momentum
-                            if tech_signals['macd'] > tech_signals['macd_signal']:
-                                insights.append("✅ **Positive momentum** - MACD above signal line")
-                            else:
-                                insights.append("⚠️ **Negative momentum** - MACD below signal line")
-                            
-                            # Volatility
-                            if tech_signals['volatility'] > 3:
-                                insights.append("⚠️ **High volatility** - Use wider stop losses")
-                            elif tech_signals['volatility'] < 1.5:
-                                insights.append("✅ **Low volatility** - Stable price movement")
-                            
-                            # Volume
-                            if tech_signals['volume'] > tech_signals['avg_volume'] * 1.5:
-                                insights.append("📊 **Above average volume** - Strong participation")
-                            
-                            for insight in insights:
-                                st.markdown(insight)
-                            
-                            # Fundamental Data
-                            st.markdown("---")
-                            st.subheader("📊 Fundamental Metrics")
-                            
-                            col1, col2, col3 = st.columns(3)
-                            
-                            with col1:
-                                st.metric("ROCE", f"{stock_data['ROCE (%)']:.2f}%" if pd.notna(stock_data['ROCE (%)']) else "N/A")
-                                st.metric("P/E Ratio", f"{stock_data['P/E Ratio']:.2f}" if pd.notna(stock_data['P/E Ratio']) else "N/A")
-                                st.metric("Debt/Equity", f"{stock_data['Debt to Equity']:.2f}" if pd.notna(stock_data['Debt to Equity']) else "N/A")
-                            
-                            with col2:
-                                st.metric("3Y Profit Growth", f"{stock_data['3Y Profit Growth (%)']:.2f}%" if pd.notna(stock_data['3Y Profit Growth (%)']) else "N/A")
-                                st.metric("ROE", f"{stock_data['ROE (%)']:.2f}%" if pd.notna(stock_data['ROE (%)']) else "N/A")
-                                st.metric("Profit Margin", f"{stock_data['Profit Margin (%)']:.2f}%" if pd.notna(stock_data['Profit Margin (%)']) else "N/A")
-                            
-                            with col3:
-                                st.metric("Market Cap", f"₹{stock_data['Market Cap (Cr)']:.0f} Cr")
-                                st.metric("Dividend Yield", f"{stock_data['Dividend Yield (%)']:.2f}%")
-                                st.metric("Revenue Growth", f"{stock_data['Revenue Growth (%)']:.2f}%" if pd.notna(stock_data['Revenue Growth (%)']) else "N/A")
-                        else:
-                            st.error("Unable to fetch technical analysis data for this stock.")
-            else:
-                st.warning("⚠️ No stocks passed the filtering criteria. Try relaxing some filters.")
-        else:
-            st.error("❌ Unable to fetch data for any stocks. Please check your internet connection and try again.")
+                st.metric("3Y Profit Growth", f"{stock_fund['3Y Profit Growth (%)']:.2f}%" if pd.notna(stock_fund['3Y Profit Growth (%)']) else "N/A")
+                st.metric("ROE", f"{stock_fund['ROE (%)']:.2f}%" if pd.notna(stock_fund['ROE (%)']) else "N/A")
+            with col3:
+                st.metric("Market Cap", f"₹{stock_fund['Market Cap (Cr)']:.0f} Cr")
+                st.metric("Dividend Yield", f"{stock_fund['Dividend Yield (%)']:.2f}%")
     
-    # Information sections
+    # Information sections (always visible)
     with st.expander("ℹ️ Understanding Technical Indicators"):
         st.markdown("""
-        ### 📊 Key Technical Indicators Explained
+        ### 📊 Key Technical Indicators
         
-        **1. Moving Averages (SMA)**
-        - **SMA 20**: Short-term trend (1 month)
-        - **SMA 50**: Medium-term trend (2.5 months)
-        - **SMA 200**: Long-term trend (10 months)
-        - **Golden Cross**: When SMA 50 crosses above SMA 200 (bullish)
-        - **Death Cross**: When SMA 50 crosses below SMA 200 (bearish)
-        
-        **2. RSI (Relative Strength Index)**
-        - Measures momentum on a scale of 0-100
+        **1. RSI (Relative Strength Index)**
         - **Below 30**: Oversold (potential buying opportunity)
         - **Above 70**: Overbought (potential selling opportunity)
         - **40-60**: Healthy neutral zone
         
-        **3. MACD (Moving Average Convergence Divergence)**
-        - Shows relationship between two moving averages
+        **2. Moving Averages**
+        - **SMA 20**: Short-term trend (1 month)
+        - **SMA 50**: Medium-term trend (2.5 months)
+        - **Golden Cross**: SMA 50 crosses above SMA 200 (bullish)
+        - **Death Cross**: SMA 50 crosses below SMA 200 (bearish)
+        
+        **3. MACD**
         - **Bullish**: MACD line crosses above signal line
         - **Bearish**: MACD line crosses below signal line
-        - Histogram shows strength of momentum
         
-        **4. Bollinger Bands**
-        - Shows volatility and price levels
-        - **Near lower band**: Potentially oversold
-        - **Near upper band**: Potentially overbought
-        - **Bands widening**: Increased volatility
+        **4. Signal Interpretation**
+        - **STRONG BUY**: Score ≥ 4 (Multiple bullish signals)
+        - **BUY**: Score 2-3 (Some bullish signals)
+        - **HOLD**: Score -1 to 1 (Neutral)
+        - **SELL**: Score -2 to -3 (Some bearish signals)
+        - **STRONG SELL**: Score ≤ -4 (Multiple bearish signals)
         
-        **5. Support & Resistance**
-        - **Support**: Price level where buying interest is strong
-        - **Resistance**: Price level where selling pressure is strong
-        - Breakout above resistance or below support signals strong moves
+        ### 🎯 How to Use This Analysis
         
-        **6. Volume Analysis**
-        - High volume confirms price movements
-        - **Rising price + high volume**: Strong buying (bullish)
-        - **Falling price + high volume**: Strong selling (bearish)
+        1. **Check Summary Table**: Get overview of all stocks' signals
+        2. **Filter by Signal**: Focus on stocks with BUY signals
+        3. **Check RSI**: Avoid stocks with RSI > 70 (overbought)
+        4. **Verify Fundamentals**: Ensure Filter Score is high (> 5)
+        5. **View Detailed Chart**: Confirm trend and support levels
         
-        ### 🎯 When to Buy (Look for multiple signals)
-        1. ✅ Price crossing above SMA 20 with volume
-        2. ✅ RSI between 30-50 (oversold recovery)
-        3. ✅ MACD bullish crossover
-        4. ✅ Price bouncing off support level
-        5. ✅ Golden Cross forming (SMA 50 > SMA 200)
-        
-        ### ⚠️ When to Avoid/Sell
-        1. ❌ Price below all major moving averages
-        2. ❌ RSI above 70 (overbought)
-        3. ❌ MACD bearish crossover
-        4. ❌ Price at strong resistance with high volume
-        5. ❌ Death Cross forming
-        
-        ### 💡 Risk Management Tips
-        - Never invest more than you can afford to lose
-        - Always use stop losses (typically 5-8% below entry)
+        ### ⚠️ Important Notes
+        - Technical analysis shows **probability**, not certainty
+        - Always combine with fundamental analysis
+        - Use proper risk management (stop losses)
         - Diversify across sectors
-        - Don't trade based on single indicators
-        - Combine technical + fundamental analysis
+        - This is for educational purposes only
         """)
     
-    with st.expander("ℹ️ About Fundamental Filtering Criteria"):
+    with st.expander("ℹ️ About Fundamental Filtering"):
         st.markdown("""
-        ### ✅ Mandatory Filters
-        - **ROCE > 15%**: Return on Capital Employed indicates efficiency of capital utilization
-        - **Positive FCF (3/4Q)**: Free Cash Flow shows real cash generation ability
-        - **P/E < 40**: Price to Earnings ratio for reasonable valuation
-        - **Profit Growth > 10%**: 3-year profit growth indicates business expansion
-        - **Debt/Equity < 1**: Lower leverage reduces financial risk
+        ### ✅ Filtering Criteria
         
-        ### 🎯 Preferred Characteristics
-        - **Dividend Payer**: Shows confidence and cash generation
-        - **High ROE**: Return on Equity indicates profitability efficiency
+        **Mandatory Filters:**
+        - **ROCE > 15%**: Efficient capital utilization
+        - **Positive FCF (3/4Q)**: Real cash generation
+        - **P/E < 40**: Reasonable valuation
+        - **Profit Growth > 10%**: Business expansion
+        - **Debt/Equity < 1**: Lower financial risk
         
-        ### ⚙️ Filtering Modes
+        **Scoring System (Flexible Mode):**
+        - ROCE: 2 points
+        - Positive FCF: 2 points
+        - Profit Growth: 2 points
+        - P/E Ratio: 1 point
+        - Debt/Equity: 1 point
+        - ROE: 1 point (if enabled)
+        - Dividend: 0.5 points (if enabled)
         
-        **Flexible Mode (Recommended)**
-        - Scores stocks based on how many criteria they meet
-        - Each filter gives points (max 8.5 points):
-          - ROCE: 2 points
-          - Positive FCF: 2 points
-          - Profit Growth: 2 points
-          - P/E Ratio: 1 point
-          - Debt/Equity: 1 point
-          - ROE: 1 point (if enabled)
-          - Dividend: 0.5 points (if enabled)
-        - Adjustable minimum score threshold
-        - **Best for finding quality stocks even if some data is missing**
+        **Total: 8.5 points maximum**
         
-        **Strict Mode**
-        - ALL selected filters must pass
-        - Eliminates stocks with any missing criteria
-        - More restrictive but ensures complete data
-        - **Use when you want only stocks meeting ALL requirements**
+        ### 💡 Investment Strategy
         
-        ### 📊 Stock Universe
-        - **NIFTY 50**: Top 50 companies by market cap
-        - **Large Cap**: Additional large-cap stocks beyond NIFTY 50
-        - **Mid Cap**: Quality mid-cap stocks with growth potential
-        
-        ### 💡 Recommendation
-        Start with **Flexible Mode** and minimum score of 3-4 to get good results. Some stocks may have missing data (especially FCF and ROCE) due to Yahoo Finance limitations.
+        1. **High Filter Score (6-8)** + **BUY Signal** = Strong candidate
+        2. **Medium Score (4-5)** + **BUY Signal** = Good candidate
+        3. **Any Score** + **SELL Signal** = Avoid or book profits
+        4. **High Score** + **HOLD** = Monitor for entry
         
         ### ⚠️ Disclaimer
-        - Data is fetched from Yahoo Finance in real-time
-        - Some metrics may not be available for all stocks
-        - Technical analysis shows probability, not certainty
-        - Always do your own research before investing
-        - This tool is for screening purposes only, not investment advice
-        - Past performance does not guarantee future results
+        - Data from Yahoo Finance (may have limitations)
+        - For educational and screening purposes only
+        - Always do your own research
+        - Consult financial advisor before investing
+        - Past performance ≠ future results
         """)
 
 if __name__ == "__main__":
