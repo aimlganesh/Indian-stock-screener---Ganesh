@@ -191,8 +191,10 @@ def get_stock_data(ticker):
         data['Debt to Equity (Adjusted)'] = adjusted_de
         
         # Technical Factors (for screening, using 1-year data)
-        if not hist_data.empty:
-            data['Price > SMA200'] = hist_data['Close'].iloc[-1] > calculate_sma(hist_data, 200).iloc[-1]
+        # FIX: Ensure a minimum of 200 days of data and explicitly cast the result to a Python bool
+        if not hist_data.empty and len(hist_data) >= 200:
+            is_above_sma = bool(hist_data['Close'].iloc[-1] > calculate_sma(hist_data, 200).iloc[-1])
+            data['Price > SMA200'] = is_above_sma
             data['RSI'] = calculate_rsi(hist_data, 14).iloc[-1]
         else:
             data['Price > SMA200'] = False
@@ -246,7 +248,8 @@ def calculate_technical_score(signals):
     score = 5.0 # Start neutral
     
     # 1. Price > SMA200 (2 points)
-    if signals.get('Price > SMA200'):
+    # The value is now guaranteed to be a native Python bool, preventing the ValueError
+    if signals.get('Price > SMA200'): 
         score += 2
         
     # 2. RSI trend (3 points)
@@ -345,7 +348,8 @@ def analyze_technical_signals(ticker, period, interval):
         latest = data.iloc[-1]
         
         signals = {
-            'Price > SMA200': latest['Close'] > latest['SMA_200'],
+            # Ensure this boolean is a scalar before being passed around, though the main fix is upstream
+            'Price > SMA200': bool(latest['Close'] > latest['SMA_200']),
             'RSI': latest['RSI'],
             'RSI Range': "Oversold (<30)" if latest['RSI'] < 30 else "Overbought (>70)" if latest['RSI'] > 70 else "Neutral (40-70)",
         }
@@ -692,7 +696,6 @@ def main():
                 
                 final_cols = list(df_screener.columns)
                 
-                # FIX: Calling the correct expert scoring function name
                 df_screener = calculate_expert_weighted_score(df_screener, final_cols) 
                 
                 # Cache data
